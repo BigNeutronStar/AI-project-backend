@@ -1,8 +1,8 @@
 fastapi
 uvicorn
 langchain-community
-openai
-faiss-cpu
+openai==0.28
 pydantic
-gTTS
 python-dotenv
+numpy
+python-multipart
