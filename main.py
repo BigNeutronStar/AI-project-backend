@@ -1,6 +1,6 @@
 import uvicorn
 from fastapi import FastAPI
-from api import router
+from router import router
 
 app = FastAPI(title="Movie Recommendation Backend")
 app.include_router(router)

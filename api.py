@@ -1,84 +1,47 @@
-import base64
-import os
-import tempfile
-from gtts import gTTS
-from fastapi import HTTPException, File, UploadFile, APIRouter
-import openai
-from chains import retrieval_chain
-from example_data import movies
-from models import MovieQuery
+import logging
 
-##############################################
-# Часть 3. Реализация API эндпоинтов           #
-##############################################
+from requests import RequestException, get
 
-router = APIRouter()
+from setup import kinopoisk_api_key
+
+api_url = "https://api.kinopoisk.dev/v1.4/"
 
 
-# 1. Текстовый интерфейс: поиск фильмов по запросу
-@router.post("/search")
-async def search_movies(query: MovieQuery):
-    # Если запрос слишком короткий – считаем его неоднозначным
-    if len(query.query.split()) < 3:
-        return {"error": "Запрос слишком короткий или неоднозначный, уточните, пожалуйста."}
-    try:
-        answer = retrieval_chain.run(query.query)
-        # Возвращаем ответ, сгенерированный с учетом найденных описаний фильмов
-        return {"query": query.query, "answer": answer}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+def get_movies(pages_start=1, pages_count=1):
+    get_movies_url = api_url + "movie?page=1&limit=250&selectFields=id&selectFields=name&selectFields=shortDescription&selectFields=type&selectFields=year&selectFields=rating&selectFields=status&selectFields=genres&selectFields=countries&selectFields=persons&selectFields=similarMovies&notNullFields=name&notNullFields=shortDescription&notNullFields=rating.kp&notNullFields=genres.name&notNullFields=persons.name&year=1990-2025&rating.kp=6-10"
+    all_movies = []
+    all_count = 0
 
-# 2. Голосовой интерфейс: получение аудиофайла, распознавание речи и синтез ответа
-@router.post("/voice")
-async def voice_interface(file: UploadFile = File(...)):
-    try:
-        # Сохраняем полученный аудиофайл во временный файл
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-            content = await file.read()
-            tmp.write(content)
-            tmp_path = tmp.name
+    for i in range(pages_start, pages_start + pages_count):
+        try:
+            response = get(get_movies_url, headers={"X-API-KEY": kinopoisk_api_key})
+            response.raise_for_status()
 
-        # Используем OpenAI Whisper для транскрибирования аудио
-        with open(tmp_path, "rb") as audio_file:
-            transcription_result = openai.Audio.transcribe("whisper-1", audio_file)
-        transcription_text = transcription_result.get("text", "").strip()
-        if not transcription_text:
-            return {"error": "Не удалось распознать речь."}
+            movies = response.json()
 
-        # Обрабатываем транскрибированный текст через RetrievalQA цепочку
-        answer = retrieval_chain.run(transcription_text)
+            all_movies += movies['docs']
+            all_count += movies['total']
 
-        # Синтезируем голосовой ответ с помощью gTTS
-        tts = gTTS(text=answer, lang="ru")
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tts_file:
-            tts.save(tts_file.name)
-            tts_file_path = tts_file.name
+        except RequestException as e:
+            logging.error(f"Request failed for page {i}: {str(e)}")
+            break  # или continue для пропуска ошибки
 
-        # Кодируем аудиофайл ответа в base64 для отправки в JSON
-        with open(tts_file_path, "rb") as audio_out:
-            audio_bytes = audio_out.read()
-            audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
+        except ValueError as e:
+            logging.error(f"JSON parsing error for page {i}: {str(e)}")
+            break
 
-        # Удаляем временные файлы
-        os.remove(tmp_path)
-        os.remove(tts_file_path)
+        except Exception as e:
+            logging.error(f"Unexpected error for page {i}: {str(e)}")
+            break
 
-        return {
-            "transcription": transcription_text,
-            "answer": answer,
-            "audio_answer_base64": audio_base64,
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    print('====> получено ', all_count, ' фильмов')
+    return all_movies, all_count
 
-# 3. Эндпоинт для агентов: выполнение дополнительных задач
-@router.post("/agent")
-async def agent_task(query: MovieQuery):
-    q_lower = query.query.lower()
-    if "средний рейтинг" in q_lower:
-        avg_rating = sum(movie["rating"] for movie in movies) / len(movies)
-        return {"task": "средний рейтинг", "average_rating": round(avg_rating, 2)}
-    elif "количество фильмов" in q_lower:
-        return {"task": "количество фильмов", "count": len(movies)}
-    else:
-        return {"message": "Агент не смог распознать задачу. Попробуйте уточнить запрос."}
+
+# {'id': 7238541, 'name': 'Триумф любви', 'type': 'tv-series', 'year': 2024,
+# 'shortDescription': 'Сын губернатора узнает о предательстве невесты и покойного отца. Страстная дорама режиссера «Юность, подожди!»',
+# 'status': 'completed',
+# 'rating': {'kp': 6.955, 'imdb': 7.5, 'filmCritics': 0, 'russianFilmCritics': 0, 'await': None},
+# 'genres': [{'name': 'мелодрама'}],
+# 'countries': [{'name': 'Китай'}],
+# 'persons': [{'id': 7201344, 'photo': 'https://image.openmoviedb.com/kinopoisk-st-images//actor_iphone/iphone360_7201344.jpg', 'name': 'Ли Жотянь', 'enName': 'Li Ruotian', 'description': 'Xue Dongfeng', 'profession': 'актеры', 'enProfession': 'actor'}]}
