@@ -10,7 +10,7 @@ def create_retrieval_chain():
     Создаем цепочку RetrievalQA, которая использует OpenAI (через langchain-community) и FAISS для RAG.
     """
     retriever = vector_store.as_retriever(search_type="similarity", search_kwargs={"k": 2})
-    llm = ChatOpenAI(temperature=0, model_name="gpt-3.5-turbo", openai_api_key=openai_api_key)
+    llm = ChatOpenAI(model_name="o3-mini", openai_api_key=openai_api_key)
     chain = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff", retriever=retriever)
     return chain
 
