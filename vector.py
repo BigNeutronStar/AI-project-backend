@@ -23,7 +23,7 @@ def get_vector_store():
     if os.path.exists(VECTOR_STORE_NAME):
         return FAISS.load_local(VECTOR_STORE_NAME, embeddings, allow_dangerous_deserialization=True)
 
-    movies, count = get_movies()
+    movies = get_movies(1, 20)
 
     texts = [movie["shortDescription"] for movie in movies]
     metadatas = [{
@@ -40,7 +40,7 @@ def get_vector_store():
     vector_store = FAISS.from_texts(texts, embeddings, metadatas=metadatas)
     vector_store.save_local(VECTOR_STORE_NAME)
 
-    print('====> ', 'В векторное хранилище записано ', count, ' фильмов')
+    print('====> ', 'В векторное хранилище записано ', len(movies), ' фильмов')
     return vector_store
 
 

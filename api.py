@@ -10,7 +10,8 @@ api_url = "https://api.kinopoisk.dev/v1.4/"
 def get_movies(pages_start=1, pages_count=1):
     get_movies_url = api_url + "movie?page=1&limit=250&selectFields=id&selectFields=name&selectFields=shortDescription&selectFields=type&selectFields=year&selectFields=rating&selectFields=status&selectFields=genres&selectFields=countries&selectFields=persons&selectFields=similarMovies&notNullFields=name&notNullFields=shortDescription&notNullFields=rating.kp&notNullFields=genres.name&notNullFields=persons.name&year=1990-2025&rating.kp=6-10"
     all_movies = []
-    all_count = 0
+
+    print('===> Началось получение фильмов по Api')
 
     for i in range(pages_start, pages_start + pages_count):
         try:
@@ -20,7 +21,6 @@ def get_movies(pages_start=1, pages_count=1):
             movies = response.json()
 
             all_movies += movies['docs']
-            all_count += movies['total']
 
         except RequestException as e:
             logging.error(f"Request failed for page {i}: {str(e)}")
@@ -34,8 +34,8 @@ def get_movies(pages_start=1, pages_count=1):
             logging.error(f"Unexpected error for page {i}: {str(e)}")
             break
 
-    print('====> получено ', all_count, ' фильмов')
-    return all_movies, all_count
+    print('====> получено ', len(all_movies), ' фильмов')
+    return all_movies
 
 
 # {'id': 7238541, 'name': 'Триумф любви', 'type': 'tv-series', 'year': 2024,

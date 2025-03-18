@@ -1,12 +1,7 @@
 import logging
-import os
-import tempfile
-import base64
-from fastapi import HTTPException, File, UploadFile, APIRouter
-from pydantic import BaseModel
-import uvicorn
+from fastapi import APIRouter
+
 from openai import OpenAI
-from setup import *
 
 import os
 import base64
@@ -16,13 +11,11 @@ from fastapi import HTTPException, UploadFile, File
 from gtts import gTTS
 import openai
 
-
-client = OpenAI()
-from dotenv import load_dotenv
-
-# Импорт ваших цепочек и моделей
 from chains import retrieval_chain
 from models import MovieQuery
+
+
+client = OpenAI()
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +47,7 @@ def wrap_prompt(user_query: str, selected_genre: str) -> str:
 @router.post("/search")
 async def search_movies(query: MovieQuery):
     if len(query.query.strip().split()) < 3:
-        return {"error": "Запрос слишком короткий или неоднозначный, уточните, пожалуйста."}
+        return {"answer": "Запрос слишком короткий или неоднозначный, уточните, пожалуйста.", 'query': query}
     try:
         wrapped_prompt = wrap_prompt(query.query, selected_genre)
         # Убедитесь, что retrieval_chain не сохраняет историю; по умолчанию каждый вызов создаёт новое обращение
