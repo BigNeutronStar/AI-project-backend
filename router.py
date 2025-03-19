@@ -1,4 +1,5 @@
 import logging
+
 from fastapi import APIRouter
 
 from openai import OpenAI
@@ -19,43 +20,46 @@ client = OpenAI()
 
 logger = logging.getLogger(__name__)
 
-# Глобальная переменная с выбранным жанром (передается с фронтенда)
-selected_genre = "Драма"
-
 router = APIRouter()
 
-def wrap_prompt(user_query: str, selected_genre: str) -> str:
+
+def wrap_prompt(query: MovieQuery) -> str:
     """
     Формирует промпт для ChatGPT на основе запроса пользователя.
     Если в запросе не указано слово "жанр", добавляется условие использовать выбранный жанр.
     """
-    if "жанр" not in user_query.lower():
-        genre_clause = f"Если в запросе не указан жанр, используй жанр \"{selected_genre}\". "
-    else:
-        genre_clause = ""
+    like_genres = query.genres["favorite"]
+    unlike_genres = query.genres["hated"]
+
+    genre_clause = ''
+    if len(like_genres) > 0:
+        genre_clause += (f'Вот жанры, которые НРАВЯТСЯ пользователю: {like_genres}. ')
+    if len(unlike_genres) > 0:
+        genre_clause += (f'Вот жанры, которые НЕ НРАВЯТСЯ пользователю: {unlike_genres}. ')
 
     prompt = (
         "Ты - эксперт по подбору фильмов и сериалов. Отвечай только по теме кино и сериалов. "
         "Если вопрос не связан с кино, отвечай: 'не могу помочь с данным вопросом, но могу порекомендовать фильм или сериал'. "
-        f"Пользователь попросил: {user_query}. "
+        f"Пользователь попросил: {query.query}. "
         f"Порекомендуй фильм(ы) или сериал(ы) с учетом предпочтений. {genre_clause}"
         "К фильму добавляй его рейтинг на IMDB и подписывай, что рейтинг взят с IMDB. "
-
     )
     return prompt
+
 
 @router.post("/search")
 async def search_movies(query: MovieQuery):
     if len(query.query.strip().split()) < 3:
         return {"answer": "Запрос слишком короткий или неоднозначный, уточните, пожалуйста.", 'query': query}
     try:
-        wrapped_prompt = wrap_prompt(query.query, selected_genre)
+        wrapped_prompt = wrap_prompt(query)
         # Убедитесь, что retrieval_chain не сохраняет историю; по умолчанию каждый вызов создаёт новое обращение
         answer = retrieval_chain.run(wrapped_prompt)
         return {"query": query.query, "wrapped_prompt": wrapped_prompt, "answer": answer}
     except Exception as e:
         logger.error(f"Ошибка в /search: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.post("/voice")
 async def voice_interface(file: UploadFile = File(...)):
