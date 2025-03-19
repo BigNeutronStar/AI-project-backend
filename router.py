@@ -1,20 +1,19 @@
+import io
 import logging
+from typing import Dict, List
 
 from fastapi import APIRouter
+from fastapi.openapi.models import Response
 
 from openai import OpenAI
 
-import os
 import base64
-import tempfile
-import asyncio
 from fastapi import HTTPException, UploadFile, File
 from gtts import gTTS
 import openai
 
 from chains import retrieval_chain
-from models import MovieQuery
-
+from models import MovieQuery, MovieResponse, VoiceResponse, VoiceQuery
 
 client = OpenAI()
 
@@ -23,13 +22,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def wrap_prompt(query: MovieQuery) -> str:
+def wrap_prompt(user_query: str, genres: Dict[str, List[str]]) -> str:
     """
     Формирует промпт для ChatGPT на основе запроса пользователя.
     Если в запросе не указано слово "жанр", добавляется условие использовать выбранный жанр.
     """
-    like_genres = query.genres["favorite"]
-    unlike_genres = query.genres["hated"]
+    like_genres = genres["favorite"]
+    unlike_genres = genres["hated"]
 
     genre_clause = ''
     if len(like_genres) > 0:
@@ -40,78 +39,61 @@ def wrap_prompt(query: MovieQuery) -> str:
     prompt = (
         "Ты - эксперт по подбору фильмов и сериалов. Отвечай только по теме кино и сериалов. "
         "Если вопрос не связан с кино, отвечай: 'не могу помочь с данным вопросом, но могу порекомендовать фильм или сериал'. "
-        f"Пользователь попросил: {query.query}. "
+        f"Пользователь попросил: {user_query}. "
         f"Порекомендуй фильм(ы) или сериал(ы) с учетом предпочтений. {genre_clause}"
         "К фильму добавляй его рейтинг на IMDB и подписывай, что рейтинг взят с IMDB. "
     )
     return prompt
 
 
-@router.post("/search")
+@router.post("/search", response_model=MovieResponse)
 async def search_movies(query: MovieQuery):
     if len(query.query.strip().split()) < 3:
-        return {"answer": "Запрос слишком короткий или неоднозначный, уточните, пожалуйста.", 'query': query}
+        return {"answer": "Запрос слишком короткий или неоднозначный, уточните, пожалуйста.", 'query': query.query}
     try:
-        wrapped_prompt = wrap_prompt(query)
+        wrapped_prompt = wrap_prompt(query.query, query.genres)
         # Убедитесь, что retrieval_chain не сохраняет историю; по умолчанию каждый вызов создаёт новое обращение
         answer = retrieval_chain.run(wrapped_prompt)
-        return {"query": query.query, "wrapped_prompt": wrapped_prompt, "answer": answer}
+        return {"query": query.query, "answer": answer}
     except Exception as e:
         logger.error(f"Ошибка в /search: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/voice")
-async def voice_interface(file: UploadFile = File(...)):
-    tmp_path = None
-    tts_file_path = None
+# TODO: разделить на 2 различных эндпоинта
+# один для файла
+# второй для ответа от гпт (возможно вместо второго стоит использовать эндпоинт /search)
+@router.post("/voice",
+             response_model=VoiceResponse,
+             responses={
+                 200: {
+                     "content": {"application/json": {"example": VoiceResponse.Config.json_schema_extra["example"]}},
+                     "description": "Success response with audio data"
+                 },
+                 500: {"description": "Internal server error"}
+             },
+             )
+async def voice_interface(query: VoiceQuery):
     try:
-        # Сохраняем аудиофайл
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav", mode="wb") as tmp:
-            content = await file.read()
-            tmp.write(content)
-            tmp_path = tmp.name
 
-        # Транскрибирование с асинхронным клиентом OpenAI
-        client = openai.AsyncOpenAI()
-        with open(tmp_path, "rb") as audio_file:
-            transcription = await client.audio.transcriptions.create(
-                model="whisper-1", 
-                file=audio_file
-            )
-        transcription_text = transcription.text.strip()
-        if not transcription_text:
-            return {"error": "Не удалось распознать речь."}
+        # Обработка запроса
+        answer = await retrieval_chain.arun(wrap_prompt(query.transcription, query.genres))
 
-        # Получаем ответ (предполагаем, что retrieval_chain поддерживает async)
-        answer = await retrieval_chain.arun(transcription_text)
-
-        # Асинхронный синтез речи
-        loop = asyncio.get_event_loop()
-        tts = gTTS(text=answer, lang="ru")
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3", mode="wb") as tts_file:
-            tts_file_path = tts_file.name
-            await loop.run_in_executor(None, tts.save, tts_file_path)
-
-        # Кодируем в base64
-        with open(tts_file_path, "rb") as audio_out:
-            audio_base64 = base64.b64encode(audio_out.read()).decode("utf-8")
+        # Генерация аудио в памяти
+        with io.BytesIO() as audio_buffer:
+            tts = gTTS(text=answer, lang="ru")
+            tts.write_to_fp(audio_buffer)
+            audio_buffer.seek(0)
+            audio_base64 = base64.b64encode(audio_buffer.read()).decode()
 
         return {
-            "transcription": transcription_text,
             "answer": answer,
-            "audio_answer_base64": audio_base64,
+            "audio_base64": audio_base64
         }
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ошибка обработки: {str(e)}")
-    finally:
-        # Гарантированное удаление временных файлов
-        for path in [tmp_path, tts_file_path]:
-            if path and os.path.exists(path):
-                try:
-                    os.remove(path)
-                except Exception as e:
-                    print(f"Ошибка удаления файла {path}: {str(e)}")
+        logger.error(f"Error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Processing error")
 
 # 3. Эндпоинт для агентов: выполнение дополнительных задач
 # @router.post("/agent")
