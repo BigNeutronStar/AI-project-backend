@@ -1,7 +1,9 @@
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from router import router
+
+from DB.db import init_db
+from backend.router import router
 
 app = FastAPI(title="Movie Recommendation Backend")
 app.add_middleware(
@@ -13,9 +15,12 @@ app.add_middleware(
 )
 app.include_router(router)
 
-
 #########################################
 # Запуск сервера через uvicorn          #
 #########################################
+
+
 if __name__ == "__main__":
+    init_db()  # Сначала инициализируем базу данных
+    print("Starting server...")
     uvicorn.run("main:app", host="127.0.0.1", port=8003, reload=True)
