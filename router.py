@@ -58,7 +58,7 @@ async def search_movies(query: MovieQuery):
     try:
         wrapped_prompt = wrap_prompt(query.query, selected_genre)
         # Убедитесь, что retrieval_chain не сохраняет историю; по умолчанию каждый вызов создаёт новое обращение
-        answer = retrieval_chain.run(wrapped_prompt)
+        answer = retrieval_chain.invoke(wrapped_prompt)
         return {"query": query.query, "wrapped_prompt": wrapped_prompt, "answer": answer}
     except Exception as e:
         logger.error(f"Ошибка в /search: {e}")
