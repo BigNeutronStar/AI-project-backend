@@ -39,26 +39,11 @@ def wrap_prompt(user_query: str, genres: Dict[str, List[str]]) -> str:
         "Ты - эксперт по подбору фильмов и сериалов. Отвечай только по теме кино и сериалов. "
         "Если вопрос не связан с кино, отвечай: 'не могу помочь с данным вопросом, но могу порекомендовать фильм или "
         "сериал'."
+        "Если ты не нашел подходящих фильмов или сериалов под запрос пользователя то ответь так 'Извините, "
+        "к сожалению, я не смог найти подходящих фильмов или сериалов'"
         f"Пользователь попросил: {user_query}. "
         f"Порекомендуй фильм(ы) или сериал(ы) с учетом предпочтений. {genre_clause}"
         "К фильму добавляй его рейтинг на IMDB и подписывай, что рейтинг взят с IMDB. "
-    )
-    return prompt
-
-
-def wrap_prompt_for_stats(user_query: str) -> str:
-    """
-    Формирует промпт для Агента подсчитывающего статистику на основе запроса пользователя.
-    """
-
-    prompt = (
-        "Твоя задача исключительно подсчет статистики. "
-        "Если в пользовательском запросе нет упоминания статистики или ползователь в ней не нуждается, отвечай пустой "
-        "строкой: ''."
-        f"Если ты понял, что пользователю нужна дополнительная оинформация о статистике тогда с помощью своих "
-        f"инструментов посчитай количество фильмов в жанрах которые упоминал пользователь и их средний рейтинг в "
-        f"каждом жанре по кинопоиску и по IMDB"
-        f"Пользователь попросил: {user_query}. "
     )
     return prompt
 
@@ -69,12 +54,17 @@ async def search_movies(query: MovieQuery):
         return {"answer": "Запрос слишком короткий или неоднозначный, уточните, пожалуйста.", 'query': query.query}
     try:
         wrapped_prompt = wrap_prompt(query.query, query.genres)
-        answer = retrieval_chain.invoke(wrapped_prompt)
+        answer = retrieval_chain.invoke(wrapped_prompt).get('result', '')
 
-        if not answer or any(phrase in answer.lower() for phrase in ["не найден", "нет похожих", "ничего не найдено", "не найдено"]):
-            answer = search_agent.invoke(wrapped_prompt)
+        if not answer or any(phrase in answer.lower() for phrase in ["не найден", "не смог", "нет похожих", "ничего не найдено", "не найдено"]):
+            answer = search_agent.invoke(wrapped_prompt).get('result', '')
+            logger.error('2====> ')
+            logger.error(answer)
 
-        stats_agent_answer = await movie_stats_agent.ainvoke(wrap_prompt_for_stats(query.query))
+        stats_agent_answer_agent = await movie_stats_agent.ainvoke(input=query)
+        stats_agent_answer = stats_agent_answer_agent['messages'][0].text()
+        logger.error('3====> ')
+        logger.error(stats_agent_answer_agent['messages'][0].text())
 
         return {"query": query.query, "answer": answer + '\n' + stats_agent_answer}
     except Exception as e:
@@ -116,15 +106,3 @@ async def voice_interface(query: VoiceQuery):
     except Exception as e:
         logger.error(f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Processing error")
-
-# 3. Эндпоинт для агентов: выполнение дополнительных задач
-# @router.post("/agent")
-# async def agent_task(query: MovieQuery):
-#     q_lower = query.query.lower()
-#     if "средний рейтинг" in q_lower:
-#         avg_rating = sum(movie["rating"] for movie in movies) / len(movies)
-#         return {"task": "средний рейтинг", "average_rating": round(avg_rating, 2)}
-#     elif "количество фильмов" in q_lower:
-#         return {"task": "количество фильмов", "count": len(movies)}
-#     else:
-#         return {"message": "Агент не смог распознать задачу. Попробуйте уточнить запрос."}

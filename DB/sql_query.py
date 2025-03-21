@@ -17,3 +17,11 @@ INSERT INTO movies (name, type, genres, rating_kp, rating_imdb, year, actors, co
 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
 RETURNING id;
 """
+
+STATS_MOVIE_BY_GENRE_QUERY = query = """
+    SELECT COUNT(*) AS movie_count, 
+           AVG(rating_kp) AS avg_rating_kp, 
+           AVG(rating_imdb) AS avg_rating_imdb
+    FROM movies
+    WHERE %s in genres
+    """

@@ -2,7 +2,7 @@ from langchain_community.utilities.tavily_search import TavilySearchAPIWrapper
 from langchain_community.tools.tavily_search.tool import TavilySearchResults
 from langchain.agents import Tool
 
-from DB.db import fetch_movies
+from DB.db import get_movies_stats_by_genres
 
 search = TavilySearchAPIWrapper()
 tavily_tool = TavilySearchResults(api_wrapper=search, max_results=10, include_answer=True)
@@ -16,26 +16,19 @@ tavily_tool = TavilySearchResults(api_wrapper=search, max_results=10, include_an
 #################################################################
 
 
-async def compute_movie_stats(genre: str) -> str:
+def compute_movie_stats(genre: str) -> str:
     """
     Функция принимает жанр и возвращает строку с количеством фильмов и средним рейтингом.
     Фильтрация осуществляется по вхождению жанра в поле 'genre'.
     """
 
-    movies_metadata = await fetch_movies()
-    filtered = [
-        movie for movie in movies_metadata
-        if genre.lower() in movie["genres"]
-    ]
-    count = len(filtered)
-    if count == 0:
+    stats = get_movies_stats_by_genres(genre)
+
+    if stats['movie_count'] == 0:
         return f"По жанру '{genre}' не найдено фильмов."
 
-    average_rating_kp = sum(movie["rating_kp"] for movie in filtered) / count
-    average_rating_imdb = sum(movie["rating_imdb"] for movie in filtered) / count
-
-    return (f"По жанру '{genre}' найдено {count} фильмов, средний рейтинг по кинопоиску: {average_rating_kp:.2f}, "
-            f"средний рейтинг по IMDB: {average_rating_imdb:.2f}")
+    return (f"По жанру '{genre}' найдено {stats['movie_count']} фильмов, средний рейтинг по кинопоиску: {stats['avg_rating_kp']}, "
+            f"средний рейтинг по IMDB: {stats['avg_rating_imdb']}")
 
 
 # Создаём tool для получения статистики

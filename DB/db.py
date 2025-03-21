@@ -1,6 +1,6 @@
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from DB.sql_query import CREATE_TABLE_QUERY, INSERT_MOVIE_QUERY
+from DB.sql_query import CREATE_TABLE_QUERY, INSERT_MOVIE_QUERY, STATS_MOVIE_BY_GENRE_QUERY
 from setup import db_password
 
 DB_CONFIG = {
@@ -48,6 +48,24 @@ def fetch_movies():
     cursor.close()
     conn.close()
     return rows
+
+
+def get_movies_stats_by_genres(genre):
+    """Возвращает количество фильмов, средний рейтинг по rating_kp и rating_imdb"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(STATS_MOVIE_BY_GENRE_QUERY, genre)
+    result = cursor.fetchone()  # Получаем одну строку
+
+    cursor.close()
+    conn.close()
+
+    return {
+        "movie_count": result[0] or 0,
+        "avg_rating_kp": round(result[1], 2) if result[1] else None,
+        "avg_rating_imdb": round(result[2], 2) if result[2] else None
+    }
 
 
 def add_movies_from_metadata(metadata):
