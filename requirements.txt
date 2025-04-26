@@ -6,6 +6,10 @@ faiss-cpu
 pydantic~=2.10.6
 gTTS~=2.5.4
 python-dotenv~=1.0.1
-
+python-multipart
 requests~=2.32.3
 langchain~=0.3.20
+langchain_openai
+
+
+langgraph~=0.3.18
